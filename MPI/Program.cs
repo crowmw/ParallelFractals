@@ -6,6 +6,10 @@ using System.Threading.Tasks;
 using MPI;
 using System.Collections;
 using System.IO;
+using MPI.Remoting;
+using System.Runtime.Remoting;
+using System.Runtime.Remoting.Channels;
+using System.Runtime.Remoting.Channels.Tcp;
 
 namespace MPI
 {
@@ -33,6 +37,11 @@ namespace MPI
 
         static void Main(string[] args)
         {
+            width = Int32.Parse(args[0]);
+            height = Int32.Parse(args[1]);
+            iterations = Int32.Parse(args[2]);
+            partition = Int32.Parse(args[3]);
+
             minNumber = new ComplexNumber(minReal, minImg);
             maxNumber = new ComplexNumber(maxReal, maxImg);
 
@@ -58,18 +67,14 @@ namespace MPI
                     for (int i = 1; i < comm.Size; i++)
                     {
                         comm.Send(row, i, (int)Tags.ROW_NUMBER);
-                        Console.WriteLine("Wysłano do "+ i);
                         row += processIncrement;
                     }
 
                     ArrayList list = new ArrayList();
-                    int max = (int)Math.Floor((double)width * height / partition) + 1;
-                    Console.WriteLine("MAX = " + max);
-                    for (int i = 0; i < max; i++)
+                    int max = (int)Math.Floor((double)width * height / partition);
+                    for (int i = 0; i <= max+1; i++)
                     {
-                        Console.WriteLine("Proces GŁÓWNY czeka na dane...");
                         ArrayList partList = comm.Receive<ArrayList>(Communicator.anySource, (int)Tags.RESULT);
-                        Console.WriteLine("Proces GŁÓWNY ODEBRAŁ " + i);
                         if (partList != null)
                         {
                             list.AddRange(partList);
@@ -77,13 +82,19 @@ namespace MPI
                         }
                     }
 
+                    Points points;
+                    TcpChannel channel = new TcpChannel();
+                    ChannelServices.RegisterChannel(channel, false);
+
+                    points = (Points)Activator.GetObject(typeof(Points), "tcp://localhost:8090/MandelBrot");
+
+                    points.SetMessage(list);
+
                     Console.WriteLine("Zakończono obliczenia: " + list.Count + " punktów.");
-                    Console.ReadKey();
                 }
-                catch(Exception ex)
+                catch (Exception ex)
                 {
                     Console.WriteLine(ex.Message + "\n ---------- \n" + ex.StackTrace);
-                    Console.ReadKey();
                 }
             }
             else
@@ -93,7 +104,7 @@ namespace MPI
                     Console.WriteLine("Proces " + comm.Rank + " pracuje...");
 
                     int row = comm.Receive<int>(0, (int)Tags.ROW_NUMBER);
-                    Console.WriteLine("Proces "+comm.Rank+" odebrał");
+
                     decimal scaleX = (maxNumber.Real - minNumber.Real) / width;
                     decimal scaleY = (maxNumber.Imaginary - minNumber.Imaginary) / height;
 
@@ -110,7 +121,7 @@ namespace MPI
                             int count = CalculatePixel(c);
 
                             PointSet set = new PointSet();
-                            set.H = x;
+                            set.W = x;
                             set.H = y;
                             set.Pixel = count;
 
@@ -137,7 +148,6 @@ namespace MPI
                 catch(Exception ex)
                 {
                     Console.WriteLine(ex.Message + "\n--------------------\n" + ex.StackTrace);
-                    Console.ReadKey();
                 }
             }
         }
